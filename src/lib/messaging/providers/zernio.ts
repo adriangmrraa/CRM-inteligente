@@ -307,8 +307,10 @@ function normalizeEvent(
     sender: {},
     // Channel hint for resolveEventChannel: message.platform is already a
     // ChannelKind string for the channels we serve; anything else fails
-    // closed through isChannelKind.
-    raw: { ...body, platform },
+    // closed through isChannelKind. eventName is stamped verbatim — it can
+    // arrive via the X-Zernio-Event header instead of body.event, and
+    // lifecycle handling keys off it (account-lifecycle.ts).
+    raw: { ...body, platform, ...(eventName ? { eventName } : {}) },
   };
 
   if (kind === "comment.received") {

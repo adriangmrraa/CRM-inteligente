@@ -424,6 +424,105 @@ export async function resolveChannelAccountByIdStrict(
     : { kind: "mismatch", reason: `account #${accountId} cannot be materialized` };
 }
 
+/**
+ * Status-agnostic counterpart of resolveChannelAccountStrict for
+ * `account.lifecycle` events. The strict resolver filters to
+ * `status='active'` rows — but a lifecycle event is precisely what flips an
+ * account into/out of that state: `account.disconnected` must still land on
+ * the (now-inactive) row it describes, and `account.connected` must find the
+ * row to revive. Rows of ANY status are matched; ambiguity and provider
+ * mismatch stay fail-closed exactly like the strict path — a lifecycle
+ * event must never update the wrong account.
+ *
+ * Credential materialization is tolerated-downgraded: a revoked account may
+ * no longer resolve usable credentials, and the lifecycle path needs only
+ * the row identity. `MissingScopedCredentialError` yields empty credentials
+ * (signature verification then falls back to the provider-level secret);
+ * this account is never used to send.
+ */
+export async function resolveChannelAccountIncludingInactive(
+  channel: ChannelKind,
+  candidates: readonly string[],
+  expectedProvider?: ProviderId
+): Promise<ChannelAccountResolution> {
+  let rows: ChannelAccountRow[];
+  try {
+    rows = await db
+      .select()
+      .from(channelAccounts)
+      .where(eq(channelAccounts.channel, channel));
+  } catch (error) {
+    return classifyRowsError(channel, error);
+  }
+
+  if (rows.length === 0) return { kind: "unprovisioned" };
+
+  const uniqueCandidates = [...new Set(candidates.filter((c) => c.length > 0))];
+  if (uniqueCandidates.length === 0) {
+    // No routing key at all: only safe when a single row of this channel
+    // exists — the same ambiguity rule as the strict resolver.
+    if (rows.length > 1) {
+      return {
+        kind: "mismatch",
+        reason: "multiple accounts and no routing key",
+      };
+    }
+  }
+
+  const matched = uniqueCandidates.length
+    ? matchRows(rows, uniqueCandidates)
+    : rows.slice(0, 1);
+  if (matched.length === 0) {
+    return { kind: "not-found", candidates: uniqueCandidates };
+  }
+
+  const distinct = [...new Map(matched.map((row) => [row.id, row])).values()];
+  if (distinct.length > 1) {
+    return { kind: "mismatch", reason: "routing key matches multiple accounts" };
+  }
+
+  const row = distinct[0];
+  if (expectedProvider && row.provider !== expectedProvider) {
+    return {
+      kind: "mismatch",
+      reason: `account #${row.id} provider '${row.provider}' != event provider '${expectedProvider}'`,
+    };
+  }
+  if (!isProviderId(row.provider)) {
+    return { kind: "mismatch", reason: `unregistered provider '${row.provider}'` };
+  }
+
+  let account: ChannelAccount | undefined;
+  try {
+    account = await rowToAccount(row);
+  } catch (error) {
+    if (error instanceof MissingScopedCredentialError) {
+      account = {
+        id: String(row.id),
+        tenantId: row.tenantId,
+        provider: row.provider,
+        channel: row.channel,
+        providerAccountId: row.providerAccountId,
+        senderAddress: row.senderAddress,
+        credentials: { apiKey: "", webhookSecret: "" },
+        status: toAccountStatus(row.status),
+      };
+    } else {
+      throw error;
+    }
+  }
+  if (!account) {
+    return { kind: "mismatch", reason: `account #${row.id} cannot be materialized` };
+  }
+  return {
+    kind: "resolved",
+    account,
+    rowId: row.id,
+    provider: row.provider,
+    channel: row.channel,
+  };
+}
+
 /** Identical shape to messenger.ts's placeholder — carries no secrets. */
 function fallbackAccount(channel: ChannelKind): ChannelAccount | undefined {
   const provider = providerForChannel(channel);

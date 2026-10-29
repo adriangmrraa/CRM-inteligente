@@ -44,8 +44,10 @@ import {
 import {
   ChannelAccountResolutionError,
   resolveChannelAccount,
+  resolveChannelAccountIncludingInactive,
   resolveChannelAccountStrict,
 } from "./accounts";
+import { applyChannelAccountLifecycle } from "./account-lifecycle";
 import { MAX_WEBHOOK_EVENTS } from "@/lib/infra/webhook-guard";
 
 import { persistChannelEvent } from "./channel-events";
@@ -276,11 +278,24 @@ export async function resolveIngressContext(
     ...eventSelfAddresses(event),
   ].filter((k): k is string => typeof k === "string" && k.length > 0);
 
-  const resolution = await resolveChannelAccountStrict(
+  let resolution = await resolveChannelAccountStrict(
     channel,
     keys,
     provider.id
   );
+
+  // Lifecycle events must reach accounts that are no longer active — the
+  // strict resolver filters to status='active', so a real row in
+  // 'disconnected' looks "not-found" here. Retry status-agnostically only
+  // for account.lifecycle events; every other kind stays fail-closed, and
+  // ambiguity/provider-mismatch resolve the same way as the strict path.
+  if (resolution.kind === "not-found" && event.kind === "account.lifecycle") {
+    resolution = await resolveChannelAccountIncludingInactive(
+      channel,
+      keys,
+      provider.id
+    );
+  }
 
   if (resolution.kind === "db-error") {
     // Retryable: the route/pipeline maps this to 503, never a silent ack.
@@ -463,6 +478,11 @@ export async function handlePassiveChannelEvent(
   let deliveryClaimed = false;
   try {
     if (!PASSIVE_PERSISTED_KINDS.has(event.kind)) {
+      // account.* events flip channel_accounts.status BEFORE the durable
+      // event row lands — a retryable failure must surface (503) so the
+      // provider redelivers rather than acking a status change that never
+      // persisted. No-op for every other kind.
+      await applyChannelAccountLifecycle(event, ctx.channelAccountId);
       const persisted = await persistChannelEvent(event, {
         channel: ctx.channel,
         account: ctx.account,

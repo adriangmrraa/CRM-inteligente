@@ -256,3 +256,36 @@ export async function registerZernioWebhook(input: {
   }
   return { ok: true };
 }
+
+/**
+ * Read back the registered webhook URLs (`GET /v1/webhooks/settings`) so a
+ * registration can be VERIFIED instead of just reported. The response shape
+ * is not contract-stable upstream — every plausible envelope is scanned and
+ * any `url` string collected; an empty result is honest "couldn't verify",
+ * never a fabricated success.
+ */
+export async function fetchZernioWebhookSettings(
+  apiKey: string
+): Promise<{ ok: true; urls: string[] } | { ok: false; error: string }> {
+  const res = await zernioGet<Record<string, unknown>>(
+    "/webhooks/settings",
+    apiKey
+  );
+  if (!res.ok) return { ok: false, error: res.error ?? "webhooks list failed" };
+  const urls = new Set<string>();
+  const scan = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) scan(item);
+      return;
+    }
+    if (value !== null && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      if (typeof record.url === "string" && record.url) urls.add(record.url);
+      for (const key of ["webhooks", "settings", "data", "items"]) {
+        scan(record[key]);
+      }
+    }
+  };
+  scan(res.data);
+  return { ok: true, urls: [...urls] };
+}

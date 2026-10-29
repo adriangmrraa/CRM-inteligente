@@ -41,6 +41,7 @@ import {
   resolveIngressContext,
 } from "./ingress";
 import { getProvider } from "./registry";
+import { applyChannelAccountLifecycle } from "./account-lifecycle";
 import { persistChannelEvent } from "./channel-events";
 import type {
   ChannelAccount,
@@ -688,6 +689,10 @@ export async function handleNormalizedEvent(
   //    error.
   if (event.kind !== "message.received" && event.kind !== "message.echo") {
     try {
+      // account.* lifecycle events flip channel_accounts.status BEFORE the
+      // durable event row lands — a failure below stays retryable so the
+      // provider redelivers instead of acking a status that never landed.
+      await applyChannelAccountLifecycle(event, channelAccountId);
       const persisted = await persistChannelEvent(event, {
         channel,
         account: effectiveCtx.account,

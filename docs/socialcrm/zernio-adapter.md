@@ -51,7 +51,15 @@ Zernio `accountId`, `credentialsRef` e.g. `env:ZERNIO_`).
   with Bearer. WhatsApp media `url` points at the authenticated
   `/v1/whatsapp/media/{mediaId}` — download promptly (Meta drops media).
 - **Standby/handover**: inbound messages under another app's control arrive
-  flagged `metadata.standby: true` (read defensively; not filtered yet).
+  flagged `metadata.standby: true` — persisted to the inbox but never
+  answered (see `src/lib/messaging/inbound-pipeline.ts` standby gate).
+- **Lifecycle → status**: `account.*` event names travel on `raw.eventName`;
+  `account-lifecycle.ts` maps known verbs (connected/reconnected → `active`,
+  disconnected/revoked/deauthorized/expired → `disconnected`) onto the bound
+  `channel_accounts.status` before the durable `channel_events` row lands.
+  Resolution is status-agnostic for lifecycle events only — a disconnected
+  row still matches `account.connected`; ambiguity/provider-mismatch stay
+  fail-closed so a foreign account's event can never move a local row.
 
 ## [RESEARCH] — open items kept as named seams
 

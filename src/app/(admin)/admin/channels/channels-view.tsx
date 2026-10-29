@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  AlertTriangleIcon,
   CheckIcon,
   CopyIcon,
   LinkIcon,
   PlugIcon,
   PowerIcon,
   PowerOffIcon,
+  ShieldCheckIcon,
   WebhookIcon,
+  XIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,11 +29,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  checkChannelAccount,
   createChannelAccount,
   registerZernioWebhookAction,
   setChannelAccountStatus,
   startZernioConnect,
   type ChannelAccountRow,
+  type ChannelCheckResult,
 } from "./actions";
 import { useIsAdmin } from "@/components/admin/role-context";
 import type { ProviderId } from "@/lib/messaging/types";
@@ -163,6 +168,16 @@ export function ChannelsView({
     statusOverrides[row.id] ? { ...row, status: statusOverrides[row.id] } : row
   );
   const [pending, startTransition] = useTransition();
+  const [checkResults, setCheckResults] = useState<
+    Record<number, ChannelCheckResult>
+  >({});
+
+  // >1 active whatsapp account makes unbound legacy conversations ambiguous:
+  // the router fails closed rather than guessing a provider.
+  const activeWhatsApp = accounts.filter(
+    (a) => a.channel === "whatsapp" && a.status === "active"
+  );
+  const mixedWhatsApp = activeWhatsApp.length > 1;
 
   const [provider, setProvider] = useState("zernio");
   const [channel, setChannel] = useState("instagram");
@@ -203,7 +218,29 @@ export function ChannelsView({
         toast.error(res.error ?? "No se pudo registrar el webhook");
         return;
       }
-      toast.success("Webhook registrado en Zernio");
+      if (res.verified) {
+        toast.success("Webhook registrado y verificado en Zernio");
+      } else {
+        toast.warning(
+          res.note ?? "Webhook registrado — verificación no disponible"
+        );
+      }
+    });
+  }
+
+  function checkAccount(row: ChannelAccountRow) {
+    startTransition(async () => {
+      const res = await checkChannelAccount(row.id);
+      setCheckResults((prev) => ({ ...prev, [row.id]: res }));
+      if (res.error) {
+        toast.error(res.error);
+      } else if (!res.ok) {
+        toast.warning("La cuenta tiene problemas — revisá el detalle");
+      } else if (res.checks.some((c) => c.ok === "warn")) {
+        toast.warning("La cuenta funciona con advertencias — revisá el detalle");
+      } else {
+        toast.success("Cuenta verificada");
+      }
     });
   }
 
@@ -442,6 +479,20 @@ export function ChannelsView({
         <h2 className="mb-4 text-sm font-semibold">
           Cuentas conectadas ({accounts.length})
         </h2>
+        {mixedWhatsApp && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-200">
+            <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
+            <p>
+              Hay <strong>{activeWhatsApp.length} cuentas de WhatsApp
+              activas</strong> (
+              {[...new Set(activeWhatsApp.map((a) => a.provider))].join(" + ")}).
+              Los mensajes entrantes llegan a la cuenta correcta, pero las
+              respuestas en conversaciones sin cuenta ligada <strong>fallan
+              cerrado</strong> para no enviar por el proveedor equivocado —
+              desconectá una o ligá la conversación a su cuenta.
+            </p>
+          </div>
+        )}
         {accounts.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No hay cuentas conectadas. Conectá la primera arriba.
@@ -456,12 +507,14 @@ export function ChannelsView({
                 <TableHead>Remitente</TableHead>
                 <TableHead>Credenciales</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead>Último evento</TableHead>
                 <TableHead className="text-right">Acción</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {accounts.map((row) => (
-                <TableRow key={row.id}>
+                <Fragment key={row.id}>
+                <TableRow>
                   <TableCell className="font-medium capitalize">
                     {row.provider}
                   </TableCell>
@@ -491,8 +544,42 @@ export function ChannelsView({
                       {row.status === "active" ? "Activa" : "Desconectada"}
                     </span>
                   </TableCell>
+                  <TableCell className="text-xs">
+                    {row.lastEventAt ? (
+                      <div>
+                        <div
+                          className={
+                            row.lastEventStatus === "failed"
+                              ? "font-medium text-red-400"
+                              : "text-foreground/90"
+                          }
+                        >
+                          {row.lastEventKind}
+                          {row.lastEventStatus ? ` · ${row.lastEventStatus}` : ""}
+                        </div>
+                        <div className="text-muted-foreground">
+                          {row.lastEventAt.toLocaleString("es-AR", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     {isAdmin && (
+                    <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => checkAccount(row)}
+                      title="Verificar estado, credenciales y binding"
+                    >
+                      <ShieldCheckIcon className="size-3.5" /> Verificar
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -509,9 +596,57 @@ export function ChannelsView({
                         </>
                       )}
                     </Button>
+                    </div>
                     )}
                   </TableCell>
                 </TableRow>
+                {checkResults[row.id] && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="bg-muted/30 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <ul className="flex flex-col gap-1.5">
+                          {checkResults[row.id].checks.map((check, i) => (
+                            <li
+                              key={i}
+                              className="flex items-start gap-2 text-xs"
+                            >
+                              {check.ok === true ? (
+                                <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
+                              ) : check.ok === "warn" ? (
+                                <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+                              ) : (
+                                <XIcon className="mt-0.5 size-3.5 shrink-0 text-red-400" />
+                              )}
+                              <span>
+                                <strong>{check.label}</strong>
+                                {check.detail ? (
+                                  <span className="text-muted-foreground">
+                                    {" "}
+                                    — {check.detail}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setCheckResults((prev) => {
+                              const next = { ...prev };
+                              delete next[row.id];
+                              return next;
+                            })
+                          }
+                        >
+                          <XIcon className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
