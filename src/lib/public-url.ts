@@ -68,6 +68,25 @@ export function resolvePublicBaseUrl(
   return nonLoopback[0] ?? candidates[0] ?? null;
 }
 
+/**
+ * True only when a provider's servers can actually reach the origin —
+ * HTTPS and non-loopback. Local development legitimately resolves a
+ * loopback base URL (it is the only candidate), but handing
+ * `http://localhost:3000/...` to a provider webhook registry creates a
+ * zombie endpoint that read-back "verifies" while never receiving a single
+ * delivery. Provider-facing registration gates on this; browser-facing
+ * URLs (OAuth callback redirects) do not need it — localhost round-trips
+ * work there.
+ */
+export function isProviderReachableBaseUrl(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "https:" && !isLoopback(url);
+  } catch {
+    return false;
+  }
+}
+
 /** Runtime resolver — reads process.env. Returns null when nothing is set. */
 export function publicBaseUrl(): string | null {
   return resolvePublicBaseUrl(process.env);

@@ -81,7 +81,12 @@ export async function GET(req: NextRequest) {
   // Credential source must match where the key actually lives: env-managed
   // installs bind env:ZERNIO_ explicitly; a key stored in agent_config
   // resolves through the account→channel→global scope chain (null ref).
-  const credentialsRef = process.env.ZERNIO_API_KEY?.trim() ? "env:ZERNIO_" : null;
+  // getIntegrationSecrets() prefers the DB value over env, so when BOTH are
+  // set the connect ran on the scoped key — stamping env:ZERNIO_ would
+  // silently bind sends to a different credential than the one that
+  // authorized this account.
+  const envKey = process.env.ZERNIO_API_KEY?.trim() ?? "";
+  const credentialsRef = apiKey && apiKey === envKey ? "env:ZERNIO_" : null;
 
   const handle = detail?.username ?? username;
   const senderAddress =
@@ -109,6 +114,11 @@ export async function GET(req: NextRequest) {
           channel: platform,
           senderAddress,
           displayName,
+          // A reconnect re-binds the row to the CURRENT credential source —
+          // a stale ref (e.g. env:ZERNIO_ after the install moved to scoped
+          // credentials) would fail resolution on an otherwise healthy
+          // account.
+          credentialsRef,
           status: "active",
           updatedAt: new Date(),
         },

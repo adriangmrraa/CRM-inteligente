@@ -30,6 +30,7 @@ import {
   ZERNIO_WHATSAPP_ONBOARDING,
 } from "@/lib/messaging/providers/zernio-connect";
 import type { ChannelKind, ProviderId } from "@/lib/messaging/types";
+import { isProviderReachableBaseUrl } from "@/lib/public-url";
 import { publicBaseUrl } from "./webhook-endpoints";
 
 export interface ChannelAccountRow {
@@ -416,6 +417,17 @@ export async function registerZernioWebhookAction(): Promise<{
     return {
       ok: false,
       error: "Falta la URL pública (AUTH_URL o NEXT_PUBLIC_APP_URL)",
+    };
+  }
+  // A loopback/local base produces a webhook Zernio can never reach — and
+  // read-back would still "verify" it, reporting a false success. Register
+  // only on the deployed public HTTPS URL; the local flow is covered by the
+  // copy-paste endpoint shown above.
+  if (!isProviderReachableBaseUrl(baseUrl)) {
+    return {
+      ok: false,
+      error:
+        "El webhook solo se puede registrar sobre la URL pública HTTPS del deploy (la base resuelta es local) — desplegá primero o pegá la URL manualmente cuando el servicio esté público",
     };
   }
   const url = `${baseUrl}/api/webhooks/ingress/zernio`;

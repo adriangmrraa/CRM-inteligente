@@ -143,7 +143,7 @@ If **both** YCloud and Zernio WhatsApp accounts are active at once:
 | Works locally | Requires the deployed HTTPS URL |
 |---|---|
 | Account rows, credentials, inbox persistence logic, signature verification tests | Embedded connect roundtrip (Zernio must reach the callback) |
-| Deterministic tests (`npm run test:agents`, `npm run test:workshop`) | Webhook registration + real event delivery |
+| Deterministic tests (`npm run test:agents`) | Webhook registration + real event delivery |
 | One labeled read/write smoke via curl/API | `Registrar en Zernio` button (refuses non-public bases) |
 
 ## Post-deploy smoke checklist

@@ -363,7 +363,7 @@ export function ChannelsView({
               placeholder="env:ZERNIO_"
             />
             <p className="text-[11px] text-muted-foreground">
-              {"env:PREFIX resuelve PREFIX+API_KEY (con _ final: env:ZERNIO_ → ZERNIO_API_KEY). 'agent_config' o vacío usa las credenciales del scope (cuenta → canal → global) de /admin/agent — hoy solo YCloud; el resto queda fail-closed."}
+              {"env:PREFIX resuelve PREFIX+API_KEY (con _ final: env:ZERNIO_ → ZERNIO_API_KEY). 'agent_config' o vacío resuelve por scope (cuenta → canal → global) las credenciales de /admin/agent → Integraciones; si no hay ninguna, cae a las variables del proveedor — sin credencial resoluble, la cuenta queda fail-closed."}
             </p>
           </div>
         </div>
@@ -387,10 +387,13 @@ export function ChannelsView({
           <h2 className="text-sm font-semibold">Conexión rápida con Zernio</h2>
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
-          Requiere <code className="font-mono text-xs">ZERNIO_API_KEY</code> en el
+          Requiere la API key de Zernio — en{" "}
+          <code className="font-mono text-xs">/admin/agent → Integraciones</code>{" "}
+          o como <code className="font-mono text-xs">ZERNIO_API_KEY</code> en el
           entorno. Te redirige a Zernio para autorizar la cuenta; al volver se
-          crea la fila automáticamente (credenciales vía{" "}
-          <code className="font-mono text-xs">env:ZERNIO_</code>). WhatsApp
+          crea la fila automáticamente y la referencia de credenciales queda
+          según de dónde salió la key (<code className="font-mono text-xs">env:ZERNIO_</code>{" "}
+          o el scope de agent_config). WhatsApp
           ofrece dos modos: <strong>coexistencia</strong> (tu número sigue
           funcionando en la app WhatsApp Business del celu — Meta muestra un
           QR para escanear) o <strong>Cloud API</strong> (número nuevo o ya

@@ -31,7 +31,7 @@ const {
 const {
   resolveChannelAccountIncludingInactive,
 } = require("./accounts") as typeof import("./accounts");
-const { handlePassiveChannelEvent } =
+const { handlePassiveChannelEvent, resolveIngressContext } =
   require("./ingress") as typeof import("./ingress");
 const { zernioProvider } =
   require("./providers/zernio") as typeof import("./providers/zernio");
@@ -279,6 +279,47 @@ describe("handlePassiveChannelEvent — lifecycle end-to-end", () => {
       .rows("channel_events")
       .filter((row) => row.deliveryId === "lc-del-3");
     assert.equal(persisted.length, 1);
+  });
+});
+
+describe("resolveIngressContext — lifecycle resolution is status-agnostic", () => {
+  it("a routing-key-less lifecycle event on a mixed-status channel binds nothing", async () => {
+    // Strict-first resolution would bind the single ACTIVE row even when the
+    // event describes the inactive one — and would mask duplicate
+    // providerAccountId rows. Lifecycle events resolve across ALL rows, so
+    // no key + >1 row is ambiguous and the event is skipped fail-closed.
+    process.env.ZERNIO_TEST_API_KEY = "k";
+    try {
+      seedAccount({ id: 20, status: "active", providerAccountId: "acc-20" });
+      seedAccount({ id: 21, status: "disconnected", providerAccountId: "acc-21" });
+      const ctx = await resolveIngressContext(
+        zernioProvider,
+        makeEvent({ providerAccountId: "" })
+      );
+      assert.equal(ctx, undefined);
+      assert.equal(accountRow(20)?.status, "active");
+      assert.equal(accountRow(21)?.status, "disconnected");
+    } finally {
+      delete process.env.ZERNIO_TEST_API_KEY;
+    }
+  });
+
+  it("still reaches an inactive row when the event carries its key", async () => {
+    process.env.ZERNIO_TEST_API_KEY = "k";
+    try {
+      seedAccount({ id: 22, status: "active", providerAccountId: "acc-22" });
+      seedAccount({ id: 23, status: "disconnected", providerAccountId: "acc-23" });
+      const ctx = await resolveIngressContext(
+        zernioProvider,
+        makeEvent({
+          providerAccountId: "acc-23",
+          raw: { platform: "instagram", eventName: "account.connected" },
+        })
+      );
+      assert.equal(ctx?.channelAccountId, 23);
+    } finally {
+      delete process.env.ZERNIO_TEST_API_KEY;
+    }
   });
 });
 

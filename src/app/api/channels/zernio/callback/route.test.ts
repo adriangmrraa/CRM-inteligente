@@ -167,4 +167,61 @@ describe("GET /api/channels/zernio/callback (HTTP level)", () => {
     assert.equal(rows[0]?.credentialsRef, "env:ZERNIO_");
     assert.equal(rows[0]?.displayName, "Brand IG");
   });
+
+  it("stamps credentialsRef=null when the DB-scoped key wins over env", async () => {
+    // Both sources set: getIntegrationSecrets() prefers agent_config — the
+    // connect ran on the scoped key, so env:ZERNIO_ would bind sends to a
+    // different credential than the one that authorized the account.
+    process.env.ZERNIO_API_KEY = "env_key_fixture";
+    fake.rows("agent_config").push({
+      id: 1,
+      zernioApiKey: "db_scoped_key_fixture", // plaintext tolerated on read
+    });
+    invalidateIntegrationSecretsCache();
+    mock.method(globalThis, "fetch", async () =>
+      new Response(JSON.stringify({ accounts: [] }))
+    );
+    cookieJar.set(connectStateCookieName("instagram"), "s1");
+    const res = await get(
+      "connected=instagram&accountId=acct_9&state=s1"
+    );
+    assert.equal(location(res).searchParams.get("connected"), "zernio:instagram");
+    const rows = fake.rows("channel_accounts");
+    assert.equal(rows[0]?.credentialsRef, null);
+  });
+
+  it("re-stamps credentialsRef on reconnect so a stale source cannot break the row", async () => {
+    // Row was created while env-managed; the install moved the key to
+    // agent_config — reconnect must rewrite the ref or resolution fails on
+    // a healthy account.
+    fake.rows("channel_accounts").push({
+      id: 5,
+      provider: "zernio",
+      channel: "instagram",
+      providerAccountId: "acct_5",
+      senderAddress: "@old",
+      displayName: null,
+      credentialsRef: "env:ZERNIO_",
+      status: "disconnected",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    fake.rows("agent_config").push({
+      id: 1,
+      zernioApiKey: "db_scoped_key_fixture",
+    });
+    invalidateIntegrationSecretsCache();
+    mock.method(globalThis, "fetch", async () =>
+      new Response(JSON.stringify({ accounts: [] }))
+    );
+    cookieJar.set(connectStateCookieName("instagram"), "s1");
+    const res = await get(
+      "connected=instagram&accountId=acct_5&username=brand&state=s1"
+    );
+    assert.equal(location(res).searchParams.get("connected"), "zernio:instagram");
+    const row = fake.rows("channel_accounts")[0];
+    assert.equal(row.credentialsRef, null);
+    assert.equal(row.status, "active");
+    assert.equal(row.senderAddress, "@brand");
+  });
 });

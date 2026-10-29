@@ -17,7 +17,7 @@ import { readBoundedBody } from "@/lib/infra/webhook-guard";
 /**
  * POST /api/webhooks/ingress/<provider> — unified inbound entry point (S12).
  *
- * Works for any registered provider (registry today: ycloud, kapso). Flow:
+ * Works for any registered provider (registry: ycloud, zernio, kapso). Flow:
  * provider by path param (404 unknown) → per-IP rate limit + bounded body
  * (F8) → `verifyAndResolveEvents` (F7): parseWebhook (capped) + per-event
  * channel_accounts resolution BEFORE processing, signature verified against

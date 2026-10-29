@@ -133,6 +133,19 @@ describe("registerZernioWebhookAction", () => {
     assert.match(res.error ?? "", /URL pública/);
   });
 
+  it("refuses a loopback base — a localhost webhook can never be delivered", async () => {
+    // The runbook promises refusal on non-public bases: registering
+    // http://localhost:3000 would read back as "verified" while Zernio
+    // could never reach it — a false verification.
+    process.env.ZERNIO_API_KEY = "k";
+    process.env.ZERNIO_WEBHOOK_SECRET = "s";
+    process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+    invalidateIntegrationSecretsCache();
+    const res = await registerZernioWebhookAction();
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /local|HTTPS|pública/i);
+  });
+
   it("reports verified:true only when read-back shows the URL", async () => {
     process.env.ZERNIO_API_KEY = "k";
     process.env.ZERNIO_WEBHOOK_SECRET = "s";

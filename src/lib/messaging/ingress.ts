@@ -285,24 +285,25 @@ export async function resolveIngressContext(
     ...eventSelfAddresses(event),
   ].filter((k): k is string => typeof k === "string" && k.length > 0);
 
-  let resolution = await resolveChannelAccountStrict(
-    channel,
-    keys,
-    provider.id
-  );
-
-  // Lifecycle events must reach accounts that are no longer active — the
-  // strict resolver filters to status='active', so a real row in
-  // 'disconnected' looks "not-found" here. Retry status-agnostically only
-  // for account.lifecycle events; every other kind stays fail-closed, and
-  // ambiguity/provider-mismatch resolve the same way as the strict path.
-  if (resolution.kind === "not-found" && event.kind === "account.lifecycle") {
-    resolution = await resolveChannelAccountIncludingInactive(
-      channel,
-      keys,
-      provider.id
-    );
-  }
+  // Lifecycle events resolve status-agnostically from the start: they are
+  // precisely what flips a row into/out of 'active', so a disconnected row
+  // must still match `account.connected`. Resolving strict-first would bind
+  // a routing-key-less event to the single ACTIVE row of the channel —
+  // which may be the wrong account entirely — and would mask duplicate
+  // providerAccountId rows that the status-agnostic path reports as
+  // ambiguous. Ambiguity/provider-mismatch stay fail-closed either way.
+  const resolution =
+    event.kind === "account.lifecycle"
+      ? await resolveChannelAccountIncludingInactive(
+          channel,
+          keys,
+          provider.id
+        )
+      : await resolveChannelAccountStrict(
+          channel,
+          keys,
+          provider.id
+        );
 
   if (resolution.kind === "db-error") {
     // Retryable: the route/pipeline maps this to 503, never a silent ack.
