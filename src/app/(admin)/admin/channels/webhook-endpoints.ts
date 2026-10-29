@@ -1,14 +1,6 @@
 import type { ProviderId } from "@/lib/messaging/types";
 
-/** Public base URL — same fallback chain as telegram/meta actions. */
-export function publicBaseUrl(): string | null {
-  const raw =
-    process.env.AUTH_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ??
-    process.env.RENDER_EXTERNAL_URL;
-  return raw ? raw.replace(/\/$/, "") : null;
-}
+export { publicBaseUrl } from "@/lib/public-url";
 
 /**
  * Webhook endpoints to paste into each provider's console. Shown on

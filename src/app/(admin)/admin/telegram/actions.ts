@@ -13,6 +13,7 @@ import { db } from "@/db";
 import { eq } from "drizzle-orm";
 import { agentConfig } from "@/db/schema";
 import { encrypt, maskToken as maskTokenUtil } from "@/lib/encryption";
+import { publicBaseUrl } from "@/lib/public-url";
 
 export type TelegramStatus = {
   configured: boolean;
@@ -38,12 +39,7 @@ export type TelegramActionState = {
  * Obtiene el estado actual de la configuración de Telegram
  */
 function getPublicHost(): string | null {
-  const raw =
-    process.env.AUTH_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.RENDER_EXTERNAL_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
-  return raw ? raw.replace(/\/$/, "") : null;
+  return publicBaseUrl();
 }
 
 export async function getTelegramStatus(): Promise<TelegramStatus> {

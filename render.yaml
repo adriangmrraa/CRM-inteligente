@@ -90,6 +90,18 @@ services:
         sync: false
       - key: WHATSAPP_PHONE_NUMBER
         sync: false
+      # Zernio (Instagram/Facebook/LinkedIn/etc., optional WhatsApp path):
+      # API key + webhook signing secret for "Conexión rápida" and one-click
+      # webhook registration. Scoped agent_config credentials are the
+      # alternative when env vars are not set (see docs/socialcrm/zernio-setup-runbook.md).
+      - key: ZERNIO_API_KEY
+        sync: false
+      - key: ZERNIO_WEBHOOK_SECRET
+        sync: false
+      # Optional: pin a specific Zernio profile for embedded connect
+      # (defaults to the first/default profile).
+      - key: ZERNIO_PROFILE_ID
+        sync: false
 
   # ---------- Cron jobs (HTTP pings; all schedules UTC) ----------
   # Each job curls a /api/cron/* endpoint with the CRON_SECRET key. buildCommand

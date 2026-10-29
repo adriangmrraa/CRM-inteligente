@@ -84,10 +84,13 @@ Zernio `accountId`, `credentialsRef` e.g. `env:ZERNIO_`).
    copy-paste needed. YCloud/Kapso still register webhooks manually; their
    URLs are shown for copy.
 
-Platforms with a connect button: whatsapp, instagram, facebook, reddit
-(OAuth-capable). Telegram/SMS stay manual — Telegram connects by bot token,
-not OAuth. Facebook runs in STANDARD mode: Zernio hosts Page selection, so
-the callback still lands with a final `accountId`.
+Platforms with a connect button: whatsapp, instagram, facebook, linkedin,
+tiktok, youtube, threads, pinterest, discord, slack
+(`ZERNIO_CONNECT_PLATFORMS` in `zernio-connect.ts` is the live-verified set).
+Telegram/SMS stay manual — Telegram connects by bot token, not OAuth; reddit
+is OAuth-capable upstream but currently 503 on Zernio's side, so it is
+manual-only until restored. Facebook runs in STANDARD mode: Zernio hosts
+Page selection, so the callback still lands with a final `accountId`.
 
 ## Provisioning checklist (per account)
 

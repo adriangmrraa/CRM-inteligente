@@ -11,6 +11,7 @@ import { agentConfig } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { reportInternalError } from "@/lib/errors";
 import { invalidateIntegrationSecretsCache } from "@/lib/integrations";
+import { publicBaseUrl } from "@/lib/public-url";
 
 export type MetaConfigState = {
   success: boolean;
@@ -50,12 +51,7 @@ export async function generateMetaOAuthState(): Promise<{ state: string; authUrl
     maxAge: 600, // 10 min — el flujo OAuth completo tarda mucho menos
   });
 
-  const host =
-    process.env.AUTH_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.RENDER_EXTERNAL_URL
-      ? `https://${process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, "")}`
-      : null);
+  const host = publicBaseUrl();
   if (!host) return null;
 
   const { buildMetaOAuthUrl } = await import("@/lib/meta/oauth");
@@ -116,12 +112,7 @@ export async function getWebhookConfig(): Promise<WebhookConfig> {
   const phone = cfgRows[0]?.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER;
 
   // Detectar la URL base desde el entorno — sin fallback hardcodeado.
-  const host =
-    process.env.AUTH_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.RENDER_EXTERNAL_URL
-      ? `https://${process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, "")}`
-      : "");
+  const host = publicBaseUrl() ?? "";
 
   return {
     webhookUrl: `${host}/api/whatsapp/webhook`,

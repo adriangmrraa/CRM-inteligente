@@ -2,7 +2,7 @@
 
 **Open-source commerce + AI-agent platform for local businesses.**
 
-Storefront, multichannel ordering with an AI sales agent (WhatsApp, Instagram, Facebook), admin dashboard, Telegram internal bot, Meta Ads attribution, and analytics — all configurable from the UI, all credentials stored in the database. Deploy it, add your business data, start selling.
+Storefront, multichannel ordering with an AI sales agent (WhatsApp, Instagram, Facebook), admin dashboard, Telegram internal bot, Meta Ads attribution, and analytics — all configurable from the UI, credentials stored encrypted in the database (or referenced from env vars per channel account). Deploy it, add your business data, start selling.
 
 Originally built for a real food business in Formosa, Argentina. Released by **[formosa.dev.ar](https://formosa.dev.ar)** (Fusa Labs) as a free resource — use it for personal projects or commercially.
 
@@ -59,14 +59,16 @@ The full runbooks live under `docs/socialcrm/`:
 
 | Doc | Covers |
 |---|---|
-| [Implementer onboarding](docs/socialcrm/implementer-onboarding.md) | Fork → Blueprint deploy → env/secrets → migrate + seed → `/admin/agent` → webhooks → verify. **Start here.** |
+| [Implementer onboarding](docs/socialcrm/implementer-onboarding.md) | Fork → Blueprint deploy → env/secrets → migrate + first admin → `/admin/agent` → webhooks → verify. **Start here.** |
 | [Install on Render + Neon](docs/socialcrm/install-render-neon.md) | Blueprint reference: env vars, migration details, first-deploy recovery, troubleshooting. |
+| [Zernio setup runbook](docs/socialcrm/zernio-setup-runbook.md) | Instagram/Facebook/etc. via Zernio: embedded connect vs manual accounts, env contract, webhook registration, troubleshooting. |
 | [AI-agent implementation guide](docs/socialcrm/ai-agent-implementation-guide.md) | Hand this to an AI agent to set up a new business instance. |
 | [Transform the repo](docs/socialcrm/transform-repo.md) | Adapting branding, catalog and prompts to a different business vertical. |
 
-Optional services (Upstash Redis, Cloudinary, YCloud/WhatsApp, Telegram, Meta)
-are configured post-deploy from `/admin/agent` — credentials live encrypted in
-the database and take precedence over env vars.
+Optional services (Upstash Redis, Cloudinary, YCloud/WhatsApp, Zernio,
+Telegram, Meta) are configured post-deploy — integration credentials live
+encrypted in the database (DB wins over env), and per-channel accounts can
+also point at `env:` references so secrets never enter the DB.
 
 ## Project layout
 

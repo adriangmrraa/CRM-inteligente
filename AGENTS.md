@@ -39,7 +39,7 @@ DB (`agent_config`) and are edited from `/admin/agent`.
 
 ## Next.js version caveat
 
-This repo uses Next 16.2.4 — APIs, conventions, and file structure differ from older
+This repo pins Next 16.4.2 — APIs, conventions, and file structure differ from older
 Next. Before editing routing, data fetching, or server/client boundaries, read the
 relevant guide under `node_modules/next/dist/docs/` and follow its deprecation notes.
 

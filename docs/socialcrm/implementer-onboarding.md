@@ -76,7 +76,7 @@ URL-encode it; nothing to do.
 
 ## Step 4 — Apply the schema + first admin
 
-These two commands run **from your own computer**, once, while the first
+The schema command runs **from your own computer**, once, while the first
 deploy builds.
 
 ```bash
@@ -84,14 +84,8 @@ git clone https://github.com/<you>/CRM-inteligente.git
 cd CRM-inteligente
 npm install
 
-# 1. Schema — use the DIRECT Neon URL (no "-pooler" in the host)
+# Schema — use the DIRECT Neon URL (no "-pooler" in the host)
 DATABASE_URL="postgresql://…direct…" npm run db:migrate
-
-# 2. First admin — never creates default credentials
-DATABASE_URL="postgresql://…pooled-or-direct…" \
-ADMIN_EMAIL="you@yourbusiness.com" \
-ADMIN_PASSWORD="pick-a-strong-password" \
-npm run db:seed
 ```
 
 - `db:migrate` is the only supported schema path. `db:push` is dev-only.
@@ -102,6 +96,24 @@ npm run db:seed
 - Windows PowerShell: set vars per-command instead, e.g.
   `$env:DATABASE_URL="…"; npm run db:migrate`.
 
+**First admin — interactive path:** once the migration lands and the service
+is live, open `https://<app>.onrender.com/setup`. It creates exactly one
+administrator with a single conditional `INSERT` and only works while `users`
+is empty — every later visit redirects to `/login`.
+
+**First admin — automation path:** for scripted/headless installs,
+`npm run db:seed` remains the supported CLI:
+
+```bash
+DATABASE_URL="postgresql://…pooled-or-direct…" \
+ADMIN_EMAIL="you@yourbusiness.com" \
+ADMIN_PASSWORD="pick-a-strong-password" \
+npm run db:seed
+```
+
+It never creates default credentials; both env vars are required and the
+insert is idempotent.
+
 **If the deploy was cancelled before you ran the migration:** Render cancels
 deploys whose health check fails ~15 min (the app reports unhealthy until the
 tables exist). Run the two commands, then Render dashboard → the service →
@@ -109,7 +121,7 @@ tables exist). Run the two commands, then Render dashboard → the service →
 
 ## Step 5 — Configure the business (/admin/agent)
 
-Log in at `https://<app>.onrender.com/login` with the seeded email/password,
+Log in at `https://<app>.onrender.com/login` with the admin created in Step 4,
 then open `/admin/agent`. Everything below is configured here — no redeploys:
 
 | Section | What to fill in |
@@ -133,6 +145,7 @@ Render are bootstrap values; `/admin/agent` is the day-to-day control surface.
 | Provider | Paste this URL in the provider console | Notes |
 |---|---|---|
 | **YCloud (WhatsApp)** | `https://<app>.onrender.com/api/whatsapp/webhook` | In the YCloud console set the **same webhook secret** you put in `/admin/agent → Integraciones → YCloud — Webhook Secret`. Legacy alias `/api/webhook/whatsapp` also answers. |
+| **Zernio** | `https://<app>.onrender.com/api/webhooks/ingress/zernio` | Unified ingress for Instagram/Facebook/LinkedIn/etc. plus optional WhatsApp. `/admin/channels` can push this URL + the signing secret to Zernio in one click once the public URL exists. Secret: `ZERNIO_WEBHOOK_SECRET` env or the scoped Zernio credential — same value you enter in Zernio webhook settings. Full runbook: [zernio-setup-runbook.md](./zernio-setup-runbook.md). |
 | **Telegram (internal ops bot)** | `https://<app>.onrender.com/api/telegram/webhook/<token>` | Token + full URL shown in `/admin/telegram` — the page generates it and can push it to Telegram via `setWebhook`. Set `TELEGRAM_BOT_TOKEN` + allowed chat IDs there too. |
 | **Meta (ads attribution)** | `https://<app>.onrender.com/api/meta/webhook` | Verify token = `META_WEBHOOK_VERIFY_TOKEN` (set it in `/admin/agent` first). |
 
@@ -142,11 +155,14 @@ webhook delivery starts immediately.
 ## Step 7 — Verify
 
 - [ ] `https://<app>.onrender.com/api/health` → `200` with `"db": "connected"`
-- [ ] `/login` works with the seeded admin
+- [ ] `/login` works with the admin created in Step 4 (`/setup` or `db:seed`)
 - [ ] Send a WhatsApp message to the YCloud number → lands in `/admin/conversations`
 - [ ] Reply from the conversation view → the reply actually arrives
 - [ ] Upload an image in `/admin/products` → works (needs `CLOUDINARY_*` set)
 - [ ] All three cron jobs show green runs in Render
+- [ ] If Zernio is wired: send a message on the connected channel → lands in
+  `/admin/conversations` bound to the right `channel_accounts` row (checklist:
+  [zernio-setup-runbook.md](./zernio-setup-runbook.md#post-deploy-smoke-checklist))
 
 ## Troubleshooting
 
@@ -156,7 +172,8 @@ webhook delivery starts immediately.
 | Health check stays 500 | `DATABASE_URL` is wrong, not a Neon URL, or Neon suspended (open the Neon console to wake it) |
 | `db:migrate` errors on `0001` / journal | Known journal defect — use the fresh-DB-only sequence in `install-render-neon.md` §3 |
 | Migration errors via the pooled URL | Use the **direct** (non-`-pooler`) Neon URL for `db:migrate`/`psql` |
-| `/setup` errors | Expected — it is blocked on a bootstrap fix; use `db:seed` (Step 4) |
+| `/setup` says setup is complete / redirects to `/login` | A user already exists — that is the permanent one-admin lock, not an error. Log in. If no user exists it shows "tables are missing" until `db:migrate` ran. |
+| Zernio webhook 401 / no events | `ZERNIO_WEBHOOK_SECRET` (env or scoped credential) must match the secret in Zernio webhook settings; the account row needs a resolvable credential (`env:ZERNIO_`, `agent_config` scope, etc.) |
 | Webhook 401 / no messages | `YCLOUD_WEBHOOK_SECRET` must match in YCloud console AND `/admin/agent`; API key must be set |
 | Cron runs 401 | If you set a cron secret in `/admin/agent`, it must equal the `CRON_SECRET` env var on the web service (DB value wins) |
 | Agent silent | "Estado del agente" switch off, AI provider key missing, or outside configured business hours |
