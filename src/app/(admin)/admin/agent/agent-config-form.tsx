@@ -121,6 +121,8 @@ export type AgentConfigFormData = {
   telegramNotifyChatId: string;
   cronSecretSet: boolean;
   escalationEmail: string;
+  zernioApiKeySet: boolean;
+  zernioWebhookSecretSet: boolean;
 };
 
 const initialState: AgentConfigState = {
@@ -1093,6 +1095,42 @@ export default function AgentConfigForm({
                     defaultValue={config.escalationEmail}
                     placeholder="dueño@tunegocio.com"
                   />
+                </div>
+              </div>
+
+              {/* Zernio — scoped credentials (global/channel/account row) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="zernioApiKey">Zernio — API key</Label>
+                  <Input
+                    id="zernioApiKey"
+                    name="zernioApiKey"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={
+                      config.zernioApiKeySet
+                        ? "•••••••• (guardado)"
+                        : "API key de Zernio (o env ZERNIO_API_KEY)"
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="zernioWebhookSecret">Zernio — Webhook Secret</Label>
+                  <Input
+                    id="zernioWebhookSecret"
+                    name="zernioWebhookSecret"
+                    type="password"
+                    autoComplete="off"
+                    placeholder={
+                      config.zernioWebhookSecretSet
+                        ? "•••••••• (guardado)"
+                        : "Secret de firma del webhook (o env)"
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Resuelven por ámbito: la cuenta propia, luego el canal,
+                    luego esta fila global; si no, las variables de entorno.
+                  </p>
                 </div>
               </div>
             </CardContent>

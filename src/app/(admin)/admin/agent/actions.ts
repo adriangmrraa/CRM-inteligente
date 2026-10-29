@@ -112,6 +112,8 @@ const agentConfigSchema = z.object({
   telegramNotifyChatId: z.string().max(50).optional(),
   cronSecret: z.string().max(200).optional(),
   escalationEmail: z.string().email("Email inválido").max(200).optional().or(z.literal("")),
+  zernioApiKey: z.string().max(500).optional(),
+  zernioWebhookSecret: z.string().max(500).optional(),
 });
 
 // ─── Actions ────────────────────────────────────────────────────────────────────
@@ -231,6 +233,8 @@ export async function saveAgentConfig(
     telegramNotifyChatId: formData.get("telegramNotifyChatId") || undefined,
     cronSecret: formData.get("cronSecret") || undefined,
     escalationEmail: formData.get("escalationEmail") || undefined,
+    zernioApiKey: formData.get("zernioApiKey") || undefined,
+    zernioWebhookSecret: formData.get("zernioWebhookSecret") || undefined,
   };
 
   const parsed = agentConfigSchema.safeParse(raw);
@@ -345,6 +349,21 @@ export async function saveAgentConfig(
             ? encrypt(parsed.data.cronSecret)
             : existing?.cronSecret || null,
       escalationEmail: parsed.data.escalationEmail ?? null,
+      // Zernio scoped credentials — the account/channel/global chain picks
+      // them up per field (accounts.ts SCOPED_PROVIDER_FIELDS). Same
+      // write-only pattern: empty keeps, "CLEAR" wipes, else AES-256-GCM.
+      zernioApiKeyEnc:
+        parsed.data.zernioApiKey === "CLEAR"
+          ? null
+          : parsed.data.zernioApiKey
+            ? encrypt(parsed.data.zernioApiKey)
+            : existing?.zernioApiKeyEnc || null,
+      zernioWebhookSecretEnc:
+        parsed.data.zernioWebhookSecret === "CLEAR"
+          ? null
+          : parsed.data.zernioWebhookSecret
+            ? encrypt(parsed.data.zernioWebhookSecret)
+            : existing?.zernioWebhookSecretEnc || null,
       updatedAt: new Date(),
     };
 

@@ -21,8 +21,9 @@ import {
  * preserves our query string per connecting-accounts.mdx).
  *
  * On success the channel_accounts row is upserted (provider=zernio,
- * credentialsRef=env:ZERNIO_) and the browser lands on /admin/channels
- * with a flash param the view turns into a toast.
+ * credentialsRef=env:ZERNIO_ when the key is env-managed, else null so the
+ * agent_config scope chain resolves the stored credential) and the browser
+ * lands on /admin/channels with a flash param the view turns into a toast.
  */
 
 function backToChannels(
@@ -71,10 +72,16 @@ export async function GET(req: NextRequest) {
     return backToChannels(req, { error: "connect-params" });
   }
 
-  const apiKey = process.env.ZERNIO_API_KEY?.trim();
+  const { getIntegrationSecrets } = await import("@/lib/integrations");
+  const apiKey = (await getIntegrationSecrets()).zernioApiKey.trim();
   // Best-effort enrichment: the callback carries only username; the account
   // record adds phoneNumber (WhatsApp) / displayName. Never fatal.
   const detail = apiKey ? await fetchZernioAccount(apiKey, accountId) : null;
+
+  // Credential source must match where the key actually lives: env-managed
+  // installs bind env:ZERNIO_ explicitly; a key stored in agent_config
+  // resolves through the account→channel→global scope chain (null ref).
+  const credentialsRef = process.env.ZERNIO_API_KEY?.trim() ? "env:ZERNIO_" : null;
 
   const handle = detail?.username ?? username;
   const senderAddress =
@@ -93,7 +100,7 @@ export async function GET(req: NextRequest) {
         providerAccountId: accountId,
         senderAddress,
         displayName,
-        credentialsRef: "env:ZERNIO_",
+        credentialsRef,
         status: "active",
       })
       .onConflictDoUpdate({

@@ -12,11 +12,16 @@ import { describe, it } from "node:test";
 import { agentConfig } from "@/db/schema";
 import { FakeDb, installFakeDb } from "@/lib/messaging/test-support/fake-db";
 
+// Needed by encrypt()/decryptIfEncrypted() for the zernio *Enc columns.
+process.env.AUTH_SECRET ??= "test-secret-for-integration-secrets";
+
 const fake = new FakeDb();
 installFakeDb(fake);
 
 const { getIntegrationSecrets, invalidateIntegrationSecretsCache } =
   require("./integrations") as typeof import("./integrations");
+const { resolveWebhookSecret } =
+  require("./messaging/ingress") as typeof import("./messaging/ingress");
 
 describe("F15 — integration secrets cache", () => {
   it("serves the 30s cache until invalidateIntegrationSecretsCache() is called", async () => {
@@ -51,5 +56,52 @@ describe("F15 — integration secrets cache", () => {
       "utf8"
     );
     assert.match(metaActions, /invalidateIntegrationSecretsCache\(\)/);
+  });
+});
+
+describe("Zernio global-scope secrets (H5)", () => {
+  it("resolves the admin-stored enc columns before env, per field", async () => {
+    // FakeDb returns the seeded row verbatim — keys mirror the select
+    // aliases (zernioApiKey := zernioApiKeyEnc on the real driver).
+    fake.seed(agentConfig, [
+      {
+        id: 1,
+        zernioApiKey: "db-api-key", // plaintext tolerated on read
+        zernioWebhookSecret: "db-webhook-secret",
+      },
+    ]);
+    process.env.ZERNIO_API_KEY = "env-api-key";
+    process.env.ZERNIO_WEBHOOK_SECRET = "env-webhook-secret";
+    try {
+      invalidateIntegrationSecretsCache();
+      const secrets = await getIntegrationSecrets();
+      assert.equal(secrets.zernioApiKey, "db-api-key");
+      assert.equal(secrets.zernioWebhookSecret, "db-webhook-secret");
+      // The provider-level ingress secret reads the same chain.
+      assert.equal(await resolveWebhookSecret("zernio"), "db-webhook-secret");
+    } finally {
+      delete process.env.ZERNIO_API_KEY;
+      delete process.env.ZERNIO_WEBHOOK_SECRET;
+    }
+  });
+
+  it("env is the fallback when the global row has no zernio fields", async () => {
+    fake.seed(agentConfig, [{ id: 1, systemPrompt: "x" }]);
+    process.env.ZERNIO_WEBHOOK_SECRET = "env-only-secret";
+    try {
+      invalidateIntegrationSecretsCache();
+      assert.equal(await resolveWebhookSecret("zernio"), "env-only-secret");
+    } finally {
+      delete process.env.ZERNIO_WEBHOOK_SECRET;
+    }
+  });
+
+  it("an encrypted stored value decrypts for resolution", async () => {
+    const { encrypt } = require("./encryption") as typeof import("./encryption");
+    fake.seed(agentConfig, [
+      { id: 1, zernioWebhookSecret: encrypt("enc-webhook-secret") },
+    ]);
+    invalidateIntegrationSecretsCache();
+    assert.equal(await resolveWebhookSecret("zernio"), "enc-webhook-secret");
   });
 });

@@ -243,6 +243,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
 /**
+ * Standby/handover gate (M3): the provider flagged this message as arriving
+ * while another app owns the thread (zernio `metadata.standby`, Meta
+ * handover protocol surfaces). The inbound row still persists to the inbox
+ * but the turn machinery — auto-reply, durable job, session transition,
+ * buffer dispatch — is skipped entirely so the agent never fights the
+ * owning app. Adapters may stamp `raw.standby` explicitly; the generic
+ * metadata paths below cover providers that forward the flag untouched.
+ */
+export function isStandbyInboundEvent(event: NormalizedInboundEvent): boolean {
+  if (event.kind !== "message.received") return false;
+  const truthy = (v: unknown) => v === true || v === "true" || v === 1;
+  const standbyOf = (v: unknown) => isRecord(v) && truthy(v.standby);
+  const raw = isRecord(event.raw) ? event.raw : undefined;
+  return (
+    truthy(raw?.standby) ||
+    standbyOf(raw?.metadata) ||
+    standbyOf(isRecord(raw?.message) ? raw.message.metadata : undefined) ||
+    standbyOf(isRecord(raw?.conversation) ? raw.conversation.metadata : undefined) ||
+    standbyOf(
+      isRecord(raw?.whatsappInboundMessage)
+        ? raw.whatsappInboundMessage.metadata
+        : undefined
+    )
+  );
+}
+
+/**
  * Location coordinates live outside the normalized contract — read them
  * tolerantly from the raw envelope (ycloud `whatsappInboundMessage.location`,
  * meta `whatsappInboundMessage.location`, kapso `message.location`, or a
@@ -682,6 +709,11 @@ export async function handleNormalizedEvent(
   const channel = effectiveCtx.channel ?? "whatsapp";
   const payload = event.raw as Record<string, unknown>;
 
+  // Standby/handover (M3): another app owns this thread — persist the
+  // inbound message below but never answer it. Computed once so every
+  // suppression surface (auto-reply, durable job, buffer) agrees.
+  const standby = isStandbyInboundEvent(event);
+
   // 2. Status/lifecycle/other events have no conversation row: persist them
   //    in `channel_events` idempotently. This replaces the old generic
   //    log-and-ack path. Only a positively identified missing schema may ack
@@ -770,8 +802,10 @@ export async function handleNormalizedEvent(
   // turn (suppressed or not): suppression gates below re-check at dispatch
   // time (AI enabled, human override, session state) and the rebuild
   // watermark excludes already-answered inbound rows, so an early job can
-  // never resurrect a reply the gates rejected.
+  // never resurrect a reply the gates rejected. Standby turns are never
+  // claimed at all — a redelivery re-arm must not resurrect a reply either.
   const ensureDurableTurnJob = async (convId: number): Promise<void> => {
+    if (standby) return;
     await enqueueInboundTurnJob({
       channel,
       channelAccountId: channelAccountId ?? null,
@@ -993,7 +1027,8 @@ export async function handleNormalizedEvent(
       isAiEnabled &&
       autoReplyEnabled &&
       autoReplyMessage &&
-      !webOrderRedirectEnabled
+      !webOrderRedirectEnabled &&
+      !standby
     ) {
       // A-13 — the gate runs before the inbound row is persisted, so two
       // concurrent first messages can both pass `shouldSendAutoReply`. The
@@ -1313,6 +1348,17 @@ export async function handleNormalizedEvent(
           return NextResponse.json({ ok: true }, { status: 200 });
         }
       }
+    }
+
+    // Standby/handover (M3): the inbound row above is the whole effect —
+    // another app owns this thread, so no turn job, web-order redirect,
+    // session transition, buffer, or automated reply ever runs. The owning
+    // app answers; we only keep the inbox copy.
+    if (standby) {
+      console.log(
+        `[webhook:wa] Standby conversation — message ${messageId} persisted without agent dispatch`
+      );
+      return NextResponse.json({ ok: true }, { status: 200 });
     }
 
     // Durable turn claim — the job shadows the buffer enqueue below so a

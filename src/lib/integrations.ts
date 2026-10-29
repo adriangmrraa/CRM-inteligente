@@ -20,6 +20,8 @@ export interface IntegrationSecrets {
   telegramNotifyChatId: string;
   cronSecret: string;
   escalationEmail: string;
+  zernioApiKey: string;
+  zernioWebhookSecret: string;
 }
 
 let cached: { at: number; value: IntegrationSecrets } | null = null;
@@ -36,6 +38,8 @@ const fromEnv = (): IntegrationSecrets => ({
   telegramNotifyChatId: process.env.TELEGRAM_LICHAS_CHAT_ID ?? "",
   cronSecret: process.env.CRON_SECRET ?? "",
   escalationEmail: process.env.ESCALATION_EMAIL ?? "",
+  zernioApiKey: process.env.ZERNIO_API_KEY ?? "",
+  zernioWebhookSecret: process.env.ZERNIO_WEBHOOK_SECRET ?? "",
 });
 
 export async function getIntegrationSecrets(): Promise<IntegrationSecrets> {
@@ -53,6 +57,8 @@ export async function getIntegrationSecrets(): Promise<IntegrationSecrets> {
         telegramNotifyChatId: agentConfig.telegramNotifyChatId,
         cronSecret: agentConfig.cronSecret,
         escalationEmail: agentConfig.escalationEmail,
+        zernioApiKey: agentConfig.zernioApiKeyEnc,
+        zernioWebhookSecret: agentConfig.zernioWebhookSecretEnc,
       })
       .from(agentConfig)
       .where(eq(agentConfig.id, 1))
@@ -76,6 +82,8 @@ export async function getIntegrationSecrets(): Promise<IntegrationSecrets> {
           telegramNotifyChatId: pick(cfg.telegramNotifyChatId, env.telegramNotifyChatId),
           cronSecret: pick(cfg.cronSecret, env.cronSecret),
           escalationEmail: pick(cfg.escalationEmail, env.escalationEmail),
+          zernioApiKey: pick(cfg.zernioApiKey, env.zernioApiKey),
+          zernioWebhookSecret: pick(cfg.zernioWebhookSecret, env.zernioWebhookSecret),
         }
       : env;
     cached = { at: Date.now(), value };

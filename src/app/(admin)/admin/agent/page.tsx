@@ -72,6 +72,8 @@ const DEFAULT_CONFIG: AgentConfigFormData = {
   telegramNotifyChatId: "",
   cronSecretSet: false,
   escalationEmail: "",
+  zernioApiKeySet: false,
+  zernioWebhookSecretSet: false,
 };
 
 function rowToFormData(row: Record<string, unknown> | undefined): AgentConfigFormData {
@@ -140,6 +142,8 @@ function rowToFormData(row: Record<string, unknown> | undefined): AgentConfigFor
         telegramNotifyChatId: (row.telegramNotifyChatId as string) ?? "",
         cronSecretSet: Boolean(row.cronSecret),
         escalationEmail: (row.escalationEmail as string) ?? "",
+        zernioApiKeySet: Boolean(row.zernioApiKeyEnc),
+        zernioWebhookSecretSet: Boolean(row.zernioWebhookSecretEnc),
       }
     : DEFAULT_CONFIG;
 }

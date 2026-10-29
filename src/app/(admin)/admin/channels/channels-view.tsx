@@ -415,7 +415,8 @@ export function ChannelsView({
           proveedor) y Telegram. Los demás canales — Instagram, Facebook,
           Reddit, LinkedIn, TikTok, YouTube, Threads, Pinterest, Discord y
           Slack — guardan los mensajes en la bandeja de entrada, sin
-          auto-reply del agente.
+          auto-reply del agente. Y un mensaje marcado en standby (otra app
+          controla el hilo) se guarda pero nunca se responde.
         </p>
       </div>
       )}
@@ -466,7 +467,8 @@ export function ChannelsView({
               </div>
             ))}
             <p className="text-[11px] text-muted-foreground">
-              En Zernio el secret es <code className="font-mono">ZERNIO_WEBHOOK_SECRET</code>;
+              En Zernio el secret se resuelve desde /admin/agent (Integraciones,
+              ámbito global) o <code className="font-mono">ZERNIO_WEBHOOK_SECRET</code>;
               en Kapso, el de su dashboard; en YCloud, el token de verificación
               habitual.
             </p>

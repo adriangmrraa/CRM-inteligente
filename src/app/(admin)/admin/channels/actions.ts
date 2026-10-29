@@ -316,8 +316,8 @@ const startConnectSchema = z.strictObject({
  * Embedded connect for Zernio: returns Zernio's `authUrl` so the client
  * navigates the operator there. The callback lands on
  * /api/channels/zernio/callback and upserts the channel_accounts row.
- * Requires ZERNIO_API_KEY in env (the same key the row references via
- * env:ZERNIO_) — this action never sees or stores the key itself.
+ * Requires a global-scope Zernio API key (agent_config → ZERNIO_API_KEY) —
+ * this action never sees or stores the key itself.
  */
 export async function startZernioConnect(
   input: unknown
@@ -333,11 +333,15 @@ export async function startZernioConnect(
   if (!isZernioConnectPlatform(platform)) {
     return { ok: false, error: `Conexión embebida no disponible para '${platform}'` };
   }
-  const apiKey = process.env.ZERNIO_API_KEY?.trim();
+  const { getIntegrationSecrets } = await import("@/lib/integrations");
+  // Global-scope credential: agent_config.zernioApiKeyEnc (admin UI) first,
+  // ZERNIO_API_KEY env second — the same chain the account row resolves.
+  const apiKey = (await getIntegrationSecrets()).zernioApiKey.trim();
   if (!apiKey) {
     return {
       ok: false,
-      error: "Falta ZERNIO_API_KEY en las variables de entorno",
+      error:
+        "Falta la API key de Zernio — cargala en /admin/agent (Integraciones) o como ZERNIO_API_KEY en el entorno",
     };
   }
   const baseUrl = publicBaseUrl();
@@ -383,9 +387,9 @@ export async function startZernioConnect(
 
 /**
  * One-click webhook registration for Zernio: posts our ingress URL and the
- * caller-chosen secret (ZERNIO_WEBHOOK_SECRET) to /v1/webhooks/settings.
- * YCloud/Kapso still configure webhooks in their own consoles — the URLs
- * shown above are what to paste there.
+ * resolved global-scope secret (agent_config → env) to
+ * /v1/webhooks/settings. YCloud/Kapso still configure webhooks in their
+ * own consoles — the URLs shown above are what to paste there.
  */
 export async function registerZernioWebhookAction(): Promise<{
   ok: boolean;
@@ -396,12 +400,15 @@ export async function registerZernioWebhookAction(): Promise<{
   if (!(await requireAdmin())) {
     return { ok: false, error: "Solo administradores pueden registrar webhooks" };
   }
-  const apiKey = process.env.ZERNIO_API_KEY?.trim();
-  const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
+  const { getIntegrationSecrets } = await import("@/lib/integrations");
+  const secrets = await getIntegrationSecrets();
+  const apiKey = secrets.zernioApiKey.trim();
+  const secret = secrets.zernioWebhookSecret.trim();
   if (!apiKey || !secret) {
     return {
       ok: false,
-      error: "Faltan ZERNIO_API_KEY y/o ZERNIO_WEBHOOK_SECRET en el entorno",
+      error:
+        "Faltan la API key y/o el webhook secret de Zernio — cargalos en /admin/agent (Integraciones) o como ZERNIO_API_KEY / ZERNIO_WEBHOOK_SECRET en el entorno",
     };
   }
   const baseUrl = publicBaseUrl();

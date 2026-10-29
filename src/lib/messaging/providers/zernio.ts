@@ -362,6 +362,15 @@ function normalizeEvent(
     const metadata = isRecord(body.metadata) ? body.metadata : undefined;
     const replyTo = asString(metadata?.quotedMessageId);
     if (replyTo) event.replyToMessageId = replyTo;
+    // Standby/handover flag (M3): the provider marks messages arriving while
+    // another app owns the thread. Stamped as the normalized raw.standby
+    // hint — the inbound pipeline persists them but never answers.
+    const truthy = (v: unknown) => v === true || v === "true" || v === 1;
+    const msgMeta = isRecord(message.metadata) ? message.metadata : undefined;
+    const convMeta = isRecord(conversation.metadata) ? conversation.metadata : undefined;
+    if (truthy(metadata?.standby) || truthy(msgMeta?.standby) || truthy(convMeta?.standby)) {
+      (event.raw as Record<string, unknown>).standby = true;
+    }
   }
 
   if (kind === "account.lifecycle" || kind === "other") {

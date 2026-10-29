@@ -4,10 +4,10 @@
  *
  * Responsibilities:
  * - resolveWebhookSecret: per-provider webhook secret. YCloud keeps the
- *   existing `agent_config → env` path via getIntegrationSecrets(); new
- *   providers resolve `${PROVIDER}_WEBHOOK_SECRET` from env until their
- *   agent_config fields land (evidence §5/§6 — zernioApiKey/zernioWebhookSecret
- *   are deferred until the Zernio adapter ships).
+ *   existing `agent_config → env` path via getIntegrationSecrets(); zernio
+ *   resolves the global `zernioWebhookSecretEnc` → ZERNIO_WEBHOOK_SECRET
+ *   through the same seam; other providers read `${PROVIDER}_WEBHOOK_SECRET`
+ *   from env.
  * - resolveEventChannel: NormalizedInboundEvent has no `channel` field (the
  *   contract is frozen per evidence §4). Channel is derived from a raw
  *   `channel`/`platform` hint when the adapter stamps one, else by inverting
@@ -73,13 +73,20 @@ export interface IngressContext {
 
 /**
  * Webhook secret per provider. `ycloud` keeps today's resolution
- * (agent_config → YCLOUD_WEBHOOK_SECRET); other providers read
- * `<PROVIDER>_WEBHOOK_SECRET` from env. Empty string = caller must 401.
+ * (agent_config → YCLOUD_WEBHOOK_SECRET); `zernio` resolves the global
+ * agent_config `zernioWebhookSecretEnc` first, then ZERNIO_WEBHOOK_SECRET —
+ * per-account scoped secrets still win via `expectedSecret` downstream.
+ * Other providers read `<PROVIDER>_WEBHOOK_SECRET` from env. Empty string
+ * = caller must 401.
  */
 export async function resolveWebhookSecret(provider: ProviderId): Promise<string> {
   if (provider === "ycloud") {
     const { getIntegrationSecrets } = await import("@/lib/integrations");
     return (await getIntegrationSecrets()).ycloudWebhookSecret;
+  }
+  if (provider === "zernio") {
+    const { getIntegrationSecrets } = await import("@/lib/integrations");
+    return (await getIntegrationSecrets()).zernioWebhookSecret;
   }
   return process.env[`${provider.toUpperCase()}_WEBHOOK_SECRET`] ?? "";
 }
