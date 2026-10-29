@@ -2,7 +2,8 @@
  * Minimal in-memory Drizzle stand-in for behavior tests that need real
  * query-flow decisions (two accounts, legacy fallback, route aggregation)
  * without a database. It supports only the shapes this codebase uses:
- * select/from/where/limit/orderBy, insert/values/returning/onConflictDoNothing,
+ * select/from/where/limit/orderBy,
+ * insert/values/returning/onConflictDoNothing/onConflictDoUpdate,
  * update/set/where, and the eq/and/or/is-null/in-array predicates.
  */
 
@@ -187,6 +188,7 @@ class QueryBuilder implements PromiseLike<unknown> {
   private inserted: Row | undefined;
   private updated: Row | undefined;
   private ignoreConflict = false;
+  private conflictUpdate: { columns: string[]; set: Row } | undefined;
 
   constructor(db: FakeDb, op: QueryBuilder["op"], table: string) {
     this.db = db;
@@ -237,6 +239,17 @@ class QueryBuilder implements PromiseLike<unknown> {
     return this;
   }
 
+  onConflictDoUpdate(opts: { target: unknown; set: Row }): this {
+    const targets = (Array.isArray(opts.target) ? opts.target : [opts.target]) as {
+      name: string;
+    }[];
+    this.conflictUpdate = {
+      columns: targets.map((column) => column.name),
+      set: opts.set,
+    };
+    return this;
+  }
+
   then<TResult1 = unknown, TResult2 = never>(
     onfulfilled?: ((value: unknown) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
@@ -259,6 +272,21 @@ class QueryBuilder implements PromiseLike<unknown> {
       return this.limitCount != null ? rows.slice(0, this.limitCount) : rows;
     }
     if (this.op === "insert") {
+      if (this.conflictUpdate) {
+        const incoming = this.inserted ?? {};
+        const match = this.db
+          .rows(this.table)
+          .find((row) =>
+            this.conflictUpdate!.columns.every(
+              (name) =>
+                valueOf(row, { name }) === valueOf(incoming, { name })
+            )
+          );
+        if (match) {
+          Object.assign(match, this.conflictUpdate.set);
+          return [match];
+        }
+      }
       try {
         return [this.db.insert(this.table, this.inserted ?? {})];
       } catch (error) {
