@@ -26,6 +26,7 @@ import {
   UsersIcon,
   WebhookIcon,
   Trash2Icon,
+  SaveIcon,
 } from "lucide-react";
 import type {
   TelegramStatus,
@@ -38,7 +39,8 @@ type Props = {
 };
 
 export function TelegramConfigClient({ initialStatus }: Props) {
-  const [status] = useState(initialStatus);
+  const [status, setStatus] = useState(initialStatus);
+  const [botToken, setBotToken] = useState("");
   const [webhookInfo, setWebhookInfo] = useState<WebhookInfo | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmDeleteWebhook, setConfirmDeleteWebhook] = useState(false);
@@ -65,6 +67,36 @@ export function TelegramConfigClient({ initialStatus }: Props) {
       }
     } catch {
       toast.error("Error al configurar webhook");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleSaveBotToken = async () => {
+    if (!botToken.trim()) {
+      toast.error("Pegá el token generado por @BotFather");
+      return;
+    }
+
+    setLoading("token-save");
+    try {
+      const { saveTelegramBotTokenAction } = await import("./actions");
+      const result = await saveTelegramBotTokenAction(botToken);
+      if (result.success) {
+        setStatus((current) => ({
+          ...current,
+          configured: true,
+          enabled: true,
+          botUsername: result.botUsername ?? current.botUsername,
+          botToken: result.maskedBotToken ?? current.botToken,
+        }));
+        setBotToken("");
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch {
+      toast.error("Error al guardar el token de Telegram");
     } finally {
       setLoading(null);
     }
@@ -201,7 +233,7 @@ export function TelegramConfigClient({ initialStatus }: Props) {
               Configuración
             </CardTitle>
             <CardDescription>
-              Variables de entorno para Telegram. Configuralas en Render.
+              Credenciales y acceso del bot de Telegram.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -210,12 +242,32 @@ export function TelegramConfigClient({ initialStatus }: Props) {
               <label className="text-sm font-medium">
                 TELEGRAM_BOT_TOKEN
               </label>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
-                  readOnly
-                  value={status.botToken || "— No configurado —"}
+                  type="password"
+                  value={botToken}
+                  onChange={(event) => setBotToken(event.target.value)}
+                  placeholder={
+                    status.botToken
+                      ? "Ingresá un token nuevo para reemplazarlo"
+                      : "Pegá el token generado por @BotFather"
+                  }
+                  autoComplete="new-password"
+                  disabled={!isAdmin || loading === "token-save"}
                   className="font-mono text-sm"
                 />
+                {isAdmin && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="btn-gold shrink-0 gap-2"
+                    onClick={handleSaveBotToken}
+                    disabled={loading === "token-save" || !botToken.trim()}
+                  >
+                    <SaveIcon className="h-4 w-4" />
+                    {loading === "token-save" ? "Guardando..." : "Guardar token"}
+                  </Button>
+                )}
                 {status.botToken && (
                   <Badge
                     variant="outline"
@@ -226,8 +278,9 @@ export function TelegramConfigClient({ initialStatus }: Props) {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Token del bot de Telegram. Se obtiene de{" "}
-                <code className="text-primary">@BotFather</code>.
+                Se obtiene de <code className="text-primary">@BotFather</code>,
+                se valida con Telegram y se guarda cifrado. El token actual nunca
+                se vuelve a mostrar.
               </p>
             </div>
 

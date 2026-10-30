@@ -14,6 +14,8 @@ import { eq } from "drizzle-orm";
 import { agentConfig } from "@/db/schema";
 import { encrypt, maskToken as maskTokenUtil } from "@/lib/encryption";
 import { publicBaseUrl } from "@/lib/public-url";
+import { revalidatePath } from "next/cache";
+import { invalidateAgentConfigScopeCache } from "@/lib/agent-config-scope";
 
 export type TelegramStatus = {
   configured: boolean;
@@ -33,6 +35,11 @@ export type WebhookInfo = {
 export type TelegramActionState = {
   success: boolean;
   message: string;
+};
+
+export type SaveTelegramBotTokenState = TelegramActionState & {
+  botUsername?: string;
+  maskedBotToken?: string;
 };
 
 /**
@@ -90,6 +97,73 @@ export async function getTelegramStatus(): Promise<TelegramStatus> {
     allowedChatIds: config.allowedChatIds,
     enabled: config.enabled,
   };
+}
+
+/**
+ * Validates and stores a Telegram bot token encrypted at rest.
+ * The raw token is never returned to the client.
+ */
+export async function saveTelegramBotTokenAction(
+  rawToken: string
+): Promise<SaveTelegramBotTokenState> {
+  if (!(await requireAdmin())) {
+    return { success: false, message: "No autorizado" };
+  }
+
+  const botToken = typeof rawToken === "string" ? rawToken.trim() : "";
+  if (!botToken || botToken.length > 256) {
+    return { success: false, message: "Ingresá un token de Telegram válido." };
+  }
+
+  const bot = await getMe(botToken);
+  if (!bot.ok || !bot.username) {
+    return {
+      success: false,
+      message: "Telegram rechazó el token. Revisalo en @BotFather e intentá nuevamente.",
+    };
+  }
+
+  try {
+    const encryptedToken = encrypt(botToken);
+    const existing = await db
+      .select({ id: agentConfig.id })
+      .from(agentConfig)
+      .where(eq(agentConfig.id, 1))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(agentConfig)
+        .set({
+          telegramBotToken: encryptedToken,
+          telegramEnabled: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(agentConfig.id, 1));
+    } else {
+      await db.insert(agentConfig).values({
+        id: 1,
+        telegramBotToken: encryptedToken,
+        telegramEnabled: true,
+      });
+    }
+
+    invalidateAgentConfigScopeCache();
+    revalidatePath("/admin/telegram");
+
+    return {
+      success: true,
+      message: `Token guardado. Bot conectado como @${bot.username}.`,
+      botUsername: `@${bot.username}`,
+      maskedBotToken: maskTokenUtil(botToken),
+    };
+  } catch (error) {
+    console.error("[telegram] Error saving bot token:", error);
+    return {
+      success: false,
+      message: "No se pudo guardar el token. Intentá nuevamente.",
+    };
+  }
 }
 
 /**
