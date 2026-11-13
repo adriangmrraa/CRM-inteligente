@@ -24,6 +24,10 @@ export type TelegramConfig = {
   enabled: boolean;
 };
 
+export type TelegramAllowedChatIdsParseResult =
+  | { success: true; ids: number[]; normalized: string }
+  | { success: false; message: string };
+
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
@@ -201,18 +205,52 @@ export async function getMe(
 
 // ─── Config helpers ──────────────────────────────────────────────────────────
 
+export function parseTelegramAllowedChatIds(
+  rawValue: string
+): TelegramAllowedChatIdsParseResult {
+  const value = rawValue.trim();
+  if (!value) {
+    return { success: true, ids: [], normalized: "" };
+  }
+
+  const tokens = value.split(",");
+  const ids: number[] = [];
+  const seen = new Set<number>();
+
+  for (const token of tokens) {
+    const trimmed = token.trim();
+    if (!/^-?\d+$/.test(trimmed)) {
+      return {
+        success: false,
+        message: "Cada chat ID debe ser un número entero separado por comas.",
+      };
+    }
+
+    const id = Number(trimmed);
+    if (!Number.isSafeInteger(id) || id === 0) {
+      return {
+        success: false,
+        message: "Cada chat ID debe ser un entero seguro distinto de cero.",
+      };
+    }
+
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+
+  return { success: true, ids, normalized: ids.join(",") };
+}
+
 export function getTelegramConfigFromEnv(): TelegramConfig {
   const botToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
   // No default — an empty token disables the webhook rather than leaving a
   // publicly guessable one.
   const webhookToken = process.env.TELEGRAM_WEBHOOK_TOKEN ?? "";
   const rawIds = process.env.TELEGRAM_ALLOWED_CHAT_IDS ?? "";
-  const allowedChatIds = rawIds
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map(Number)
-    .filter((n) => !isNaN(n));
+  const parsedChatIds = parseTelegramAllowedChatIds(rawIds);
+  const allowedChatIds = parsedChatIds.success ? parsedChatIds.ids : [];
 
   return {
     botToken,
@@ -243,7 +281,21 @@ export async function getTelegramConfigFromDB(): Promise<TelegramConfig> {
       .limit(1);
 
     const config = rows[0];
-    if (config?.telegramBotToken) {
+    if (config) {
+      const parsedChatIds = parseTelegramAllowedChatIds(config.telegramChatId ?? "");
+      const allowedChatIds = parsedChatIds.success ? parsedChatIds.ids : [];
+
+      if (!config.telegramBotToken) {
+        const envConfig = getTelegramConfigFromEnv();
+        return {
+          ...envConfig,
+          allowedChatIds:
+            config.telegramChatId === null
+              ? envConfig.allowedChatIds
+              : allowedChatIds,
+        };
+      }
+
       const decryptedToken = decrypt(config.telegramBotToken);
       // No default: an empty webhook token disables the route (401 on every
       // request) rather than leaving a publicly guessable one.
@@ -269,14 +321,6 @@ export async function getTelegramConfigFromDB(): Promise<TelegramConfig> {
           console.error("[telegram] Could not migrate legacy webhook token:", migrationError);
         }
       }
-      // Soporta múltiples IDs separados por coma: "123456, 789012, 345678"
-      const allowedChatIds = config.telegramChatId
-        ? config.telegramChatId
-            .split(",")
-            .map((id: string) => parseInt(id.trim(), 10))
-            .filter((id: number) => !isNaN(id) && id > 0)
-        : [];
-
       return {
         botToken: decryptedToken,
         webhookToken,
