@@ -41,6 +41,9 @@ type Props = {
 export function TelegramConfigClient({ initialStatus }: Props) {
   const [status, setStatus] = useState(initialStatus);
   const [botToken, setBotToken] = useState("");
+  const [allowedChatIdsInput, setAllowedChatIdsInput] = useState(
+    initialStatus.allowedChatIds.join(", ")
+  );
   const [webhookInfo, setWebhookInfo] = useState<WebhookInfo | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmDeleteWebhook, setConfirmDeleteWebhook] = useState(false);
@@ -97,6 +100,29 @@ export function TelegramConfigClient({ initialStatus }: Props) {
       }
     } catch {
       toast.error("Error al guardar el token de Telegram");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleSaveAllowedChatIds = async () => {
+    setLoading("chat-ids-save");
+    try {
+      const { saveTelegramAllowedChatIdsAction } = await import("./actions");
+      const result = await saveTelegramAllowedChatIdsAction(allowedChatIdsInput);
+      if (result.success && result.allowedChatIds) {
+        const normalizedInput = result.allowedChatIds.join(", ");
+        setAllowedChatIdsInput(normalizedInput);
+        setStatus((current) => ({
+          ...current,
+          allowedChatIds: result.allowedChatIds ?? [],
+        }));
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch {
+      toast.error("Error al guardar los chats autorizados");
     } finally {
       setLoading(null);
     }
@@ -318,22 +344,47 @@ export function TelegramConfigClient({ initialStatus }: Props) {
 
             {/* Allowed Chat IDs */}
             <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-2 text-sm font-medium">
+              <label
+                htmlFor="telegram-allowed-chat-ids"
+                className="flex items-center gap-2 text-sm font-medium"
+              >
                 <UsersIcon className="h-4 w-4" />
                 TELEGRAM_ALLOWED_CHAT_IDS
               </label>
-              <Input
-                readOnly
-                value={
-                  status.allowedChatIds.length > 0
-                    ? status.allowedChatIds.join(", ")
-                    : "— No configurado —"
-                }
-                className="font-mono text-sm"
-              />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  id="telegram-allowed-chat-ids"
+                  value={allowedChatIdsInput}
+                  onChange={(event) => setAllowedChatIdsInput(event.target.value)}
+                  placeholder="123456789, -1001234567890"
+                  inputMode="text"
+                  autoComplete="off"
+                  disabled={!isAdmin || loading === "chat-ids-save"}
+                  aria-describedby="telegram-allowed-chat-ids-help"
+                  className="font-mono text-sm"
+                />
+                {isAdmin && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="btn-gold shrink-0 gap-2"
+                    onClick={handleSaveAllowedChatIds}
+                    disabled={loading === "chat-ids-save"}
+                  >
+                    <SaveIcon className="h-4 w-4" />
+                    {loading === "chat-ids-save" ? "Guardando..." : "Guardar chats"}
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
-                IDs de chats/grupos autorizados (separados por coma). Dejá vacío
-                para permitir todos (no recomendado).
+                IDs de chats y grupos autorizados, separados por comas. Los grupos
+                y supergrupos usan IDs negativos.
+              </p>
+              <p
+                id="telegram-allowed-chat-ids-help"
+                className="text-xs font-medium text-amber-500"
+              >
+                Una lista vacía bloquea todos los chats.
               </p>
             </div>
           </CardContent>

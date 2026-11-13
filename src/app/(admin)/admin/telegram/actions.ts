@@ -8,6 +8,7 @@ import {
   setTelegramWebhook,
   deleteTelegramWebhook as removeTelegramWebhook,
   getTelegramWebhookInfo,
+  parseTelegramAllowedChatIds,
 } from "@/lib/telegram/bot";
 import { db } from "@/db";
 import { eq } from "drizzle-orm";
@@ -40,6 +41,10 @@ export type TelegramActionState = {
 export type SaveTelegramBotTokenState = TelegramActionState & {
   botUsername?: string;
   maskedBotToken?: string;
+};
+
+export type SaveTelegramAllowedChatIdsState = TelegramActionState & {
+  allowedChatIds?: number[];
 };
 
 /**
@@ -162,6 +167,68 @@ export async function saveTelegramBotTokenAction(
     return {
       success: false,
       message: "No se pudo guardar el token. Intentá nuevamente.",
+    };
+  }
+}
+
+export async function saveTelegramAllowedChatIdsAction(
+  rawChatIds: string
+): Promise<SaveTelegramAllowedChatIdsState> {
+  if (!(await requireAdmin())) {
+    return { success: false, message: "No autorizado" };
+  }
+
+  const parsed = parseTelegramAllowedChatIds(
+    typeof rawChatIds === "string" ? rawChatIds : ""
+  );
+  if (!parsed.success) {
+    return { success: false, message: parsed.message };
+  }
+
+  if (parsed.normalized.length > 50) {
+    return {
+      success: false,
+      message: "La lista normalizada supera el máximo de 50 caracteres.",
+    };
+  }
+
+  try {
+    const existing = await db
+      .select({ id: agentConfig.id })
+      .from(agentConfig)
+      .where(eq(agentConfig.id, 1))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(agentConfig)
+        .set({
+          telegramChatId: parsed.normalized,
+          updatedAt: new Date(),
+        })
+        .where(eq(agentConfig.id, 1));
+    } else {
+      await db.insert(agentConfig).values({
+        id: 1,
+        telegramChatId: parsed.normalized,
+      });
+    }
+
+    invalidateAgentConfigScopeCache();
+    revalidatePath("/admin/telegram");
+
+    return {
+      success: true,
+      message: parsed.ids.length
+        ? "Chats autorizados guardados."
+        : "Lista vaciada. Telegram bloqueará todos los chats.",
+      allowedChatIds: parsed.ids,
+    };
+  } catch (error) {
+    console.error("[telegram] Error saving allowed chat IDs:", error);
+    return {
+      success: false,
+      message: "No se pudieron guardar los chats autorizados.",
     };
   }
 }
